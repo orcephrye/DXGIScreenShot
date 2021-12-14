@@ -1,0 +1,52 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "cppbuild",
+			"label": "Build dxgiScreenShot.c",
+			"command": "C:\\msys64\\mingw64\\bin\\gcc.exe",
+			"args": [
+				"-fdiagnostics-color=always",
+				"-g",
+				"${file}",
+				"-o",
+				"${fileDirname}\\${fileBasenameNoExtension}.exe",
+				"-ld3d11",
+				"-ldxgi",
+				"-lole32"
+			],
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: C:\\msys64\\mingw64\\bin\\gcc.exe"
+		}, 
+		{
+			"type": "cppbuild",
+			"label": "Build optimized dxgiScreenShot.c",
+			"command": "C:\\msys64\\mingw64\\bin\\gcc.exe",
+			"args": [
+				"-fdiagnostics-color=always",
+				"-g",
+				"-O3",
+				"${file}",
+				"-o",
+				"${fileDirname}\\${fileBasenameNoExtension}.exe",
+				"-ld3d11",
+				"-ldxgi",
+				"-lole32"
+			],
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: C:\\msys64\\mingw64\\bin\\gcc.exe"
+		}
+	]
+}

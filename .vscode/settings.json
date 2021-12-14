@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "dxgi1_2.h": "c",
+        "shellapi.h": "c",
+        "shlobj.h": "c",
+        "d3d11.h": "c",
+        "windows.h": "c",
+        "string.h": "c",
+        "dxgi.h": "c",
+        "d3dcommon.h": "c"
+    }
+}
