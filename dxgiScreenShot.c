@@ -11,11 +11,17 @@
 #include <Windows.h>
 #include <shlobj.h>
 #include <shellapi.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
+#include <stdlib.h>
 
+#include "dxgiScreenShot.h"
+#include "inih/ini.h"
 
 #define ARRAY_LENGTH(arr) (sizeof(arr) / sizeof(*(arr)))
+#define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
 #define LOG(data_to_be_printed) printf("FILE=%s::LINE=%d::DATA=%s\n", __FILE__, __LINE__, data_to_be_printed)
 #define DEBUGLOGGER(data_to_be_printed) {   \
     if (DEBUG_ENABLED == 1) {               \
@@ -29,7 +35,6 @@
             return num;                                    \
     }                                                      \
 }
-
 
 // Feature levels supported
 static const D3D_FEATURE_LEVEL win10featureLevels[] =
@@ -68,8 +73,100 @@ static const unsigned int featureLevelCount = ARRAY_LENGTH(win10featureLevels);
 
 static struct iface * this    = NULL;
 
+
+void printHelp() {
+    printf(
+        "Usage: dxgiScreenShot.exe [OPTIONS]\n"
+        "Takes a screen shot using DXGI Desktop Duplication and D3D11 APIs. Saves the file in Users Pictures directory.\n "
+        "/fileName [Filename]: Can specify the name of the screenshot\n "
+        "/drawCursor: Boolean flag. If provided it will draw the cursor. If not provided the cursor will not be drawn.\n "
+        "/debug: Boolean flag. If provied it will enable logging too std out. \n"
+    );
+}
+
+static struct Option options[] =
+{
+    {
+        .name           = "configFile",
+        .description    = "The file to read the configuration from",
+        .type           = OPTION_TYPE_STRING,
+        .value.x_string = NULL,
+    },
+    {
+        .name           = "fileName",
+        .description    = "The filename of the screen catpture image.",
+        .type           = OPTION_TYPE_STRING,
+        .value.x_string = "ScreenShot.bmp",
+    },
+    {
+        .name           = "drawCursor",
+        .description    = "Boolean flag. If provided it will draw the cursor.",
+        .type           = OPTION_TYPE_BOOL,
+        .value.x_bool   = 0,
+    },
+    {
+        .name           = "debug",
+        .description    = "Boolean flag. If provided it will enable debug output too the console",
+        .value.x_bool   = 0,
+    },
+    {0}
+};
+
+Option* findOption(const char* optionName, Option fOptions[]) {
+    Option* pOption;
+    int index = 0;
+    for(index = 0; fOptions[index].type != OPTION_TYPE_NONE; ++index) {
+        if (strcmp(fOptions[index].name, optionName) == 0) {
+            pOption = fOptions + index;
+            break;
+        }
+    }
+    return pOption;
+}
+
+static int handler(void* config, const char* section, const char* name, const char* value) {
+    // config instance for filling in the values.
+    Option* pconfig = (Option*)config;
+    Option* crntOption;
+    crntOption = findOption(name, pconfig);
+    if(crntOption == NULL) {
+        return 0;
+    }
+
+    if (crntOption->type == OPTION_TYPE_INT) {
+        crntOption->value.x_int = atoi(value);
+    } else if (crntOption->type == OPTION_TYPE_STRING) {
+         crntOption->value.x_string = strdup(value);
+    } else if (crntOption->type == OPTION_TYPE_BOOL) {
+         crntOption->value.x_bool = atoi(value);
+    } else if (crntOption->type == OPTION_TYPE_FLOAT) {
+         crntOption->value.x_float = strtof(value, NULL);
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
+
+static void printOptions(Option fOptions[]) {
+    for(int index = 0; fOptions[index].type != OPTION_TYPE_NONE; ++index) {
+            if (fOptions[index].type == OPTION_TYPE_INT) {
+                printf("Name: %s\nDescription: %s\nType: %d\nValue: %d\n", fOptions[index].name, fOptions[index].description, fOptions[index].type, fOptions[index].value);
+            } else if (fOptions[index].type == OPTION_TYPE_STRING) {
+                printf("Name: %s\nDescription: %s\nType: %d\nValue: %s\n", fOptions[index].name, fOptions[index].description, fOptions[index].type, fOptions[index].value);
+            } else if (fOptions[index].type == OPTION_TYPE_BOOL) {
+                printf("Name: %s\nDescription: %s\nType: %d\nValue: %d\n", fOptions[index].name, fOptions[index].description, fOptions[index].type, fOptions[index].value);
+            } else if (fOptions[index].type == OPTION_TYPE_FLOAT) {
+                printf("Name: %s\nDescription: %s\nType: %d\nValue: %f\n", fOptions[index].name, fOptions[index].description, fOptions[index].type, fOptions[index].value);
+            }
+    }
+}
+
+
 int main(int argc, char *argv[]){
 
+    ShowWindow(GetConsoleWindow(), SW_HIDE);
+    
     HRESULT hr;
     int errorNum = 0;
     int8_t cursor_flag = 0;
@@ -84,11 +181,7 @@ int main(int argc, char *argv[]){
         } else if (strcmp(argv[argNum], "/drawCursor") == 0) {
             cursor_flag = 1;
         } else if (strcmp(argv[argNum], "/help") == 0) {
-            printf("Usage: dxgiScreenShot.exe [OPTIONS]\n \
-Takes a screen shot using DXGI Desktop Duplication and D3D11 APIs. Saves the file in Users Pictures directory.\n \
-/fileName [Filename]: Can specify the name of the screenshot\n \
-/drawCursor: Boolean flag. If provided it will draw the cursor. If not provided the cursor will not be drawn.\n \
-/debug: Boolean flag. If provied it will enable logging too std out. \n");
+            printHelp();
             return errorNum;
         } else if  (strcmp(argv[argNum], "/debug") == 0) {
             DEBUG_ENABLED = 1;
