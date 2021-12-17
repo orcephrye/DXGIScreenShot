@@ -194,8 +194,6 @@ int main(int argc, char *argv[]){
         }
     }
 
-    print_options(options);
-
     for (argNum = 0; argNum < argc; ++argNum) {
         if (strcmp(argv[argNum], "/help") == 0) {
             printHelp();
