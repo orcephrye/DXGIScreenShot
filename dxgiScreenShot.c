@@ -4,6 +4,7 @@
 #define COBJMACROS
 #define INITGUID
 
+
 #include <d3d11.h>
 #include <dxgi.h>
 #include <dxgi1_2.h>
@@ -17,8 +18,11 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "dxgiScreenShot.h"
+
 #include "inih/ini.h"
+#include "dxgiScreenShot.h"
+#include "options.h"
+
 
 #define ARRAY_LENGTH(arr) (sizeof(arr) / sizeof(*(arr)))
 #define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
@@ -28,12 +32,16 @@
         LOG(data_to_be_printed);            \
     }                                       \
 }
-#define returnIfFailure(hrNum, num, to_be_printed) {       \
-        if (FAILED(hrNum)) {                               \
-            DEBUGLOGGER(to_be_printed);                    \
-            free(this);                                    \
-            return num;                                    \
-    }                                                      \
+#define returnIfFailure(hrNum, num, to_be_printed) {        \
+        if (FAILED(hrNum)) {                                \
+            DEBUGLOGGER(to_be_printed);                     \
+            free(this);                                     \
+            if (DEBUG_ENABLED == 1) {                       \
+                printf("\nPress Enter too continue... \n"); \
+                puts(tmpfileName);                          \
+            }                                               \
+            return num;                                     \
+    }                                                       \
 }
 
 // Feature levels supported
@@ -74,16 +82,6 @@ static const unsigned int featureLevelCount = ARRAY_LENGTH(win10featureLevels);
 static struct iface * this    = NULL;
 
 
-void printHelp() {
-    printf(
-        "Usage: dxgiScreenShot.exe [OPTIONS]\n"
-        "Takes a screen shot using DXGI Desktop Duplication and D3D11 APIs. Saves the file in Users Pictures directory.\n "
-        "/fileName [Filename]: Can specify the name of the screenshot\n "
-        "/drawCursor: Boolean flag. If provided it will draw the cursor. If not provided the cursor will not be drawn.\n "
-        "/debug: Boolean flag. If provied it will enable logging too std out. \n"
-    );
-}
-
 static struct Option options[] =
 {
     {
@@ -107,89 +105,145 @@ static struct Option options[] =
     {
         .name           = "debug",
         .description    = "Boolean flag. If provided it will enable debug output too the console",
+        .type           = OPTION_TYPE_BOOL,
         .value.x_bool   = 0,
+    },
+    {
+        .name           = "showImage",
+        .description    = "Boolean flag. Automatically show imagine if present.",
+        .type           = OPTION_TYPE_BOOL,
+        .value.x_bool = 0,
     },
     {0}
 };
 
-Option* findOption(const char* optionName, Option fOptions[]) {
-    Option* pOption;
-    int index = 0;
-    for(index = 0; fOptions[index].type != OPTION_TYPE_NONE; ++index) {
-        if (strcmp(fOptions[index].name, optionName) == 0) {
-            pOption = fOptions + index;
-            break;
-        }
-    }
-    return pOption;
-}
 
-static int handler(void* config, const char* section, const char* name, const char* value) {
-    // config instance for filling in the values.
-    Option* pconfig = (Option*)config;
-    Option* crntOption;
-    crntOption = findOption(name, pconfig);
-    if(crntOption == NULL) {
-        return 0;
-    }
-
-    if (crntOption->type == OPTION_TYPE_INT) {
-        crntOption->value.x_int = atoi(value);
-    } else if (crntOption->type == OPTION_TYPE_STRING) {
-         crntOption->value.x_string = strdup(value);
-    } else if (crntOption->type == OPTION_TYPE_BOOL) {
-         crntOption->value.x_bool = atoi(value);
-    } else if (crntOption->type == OPTION_TYPE_FLOAT) {
-         crntOption->value.x_float = strtof(value, NULL);
-    } else {
-        return 0;
-    }
-    return 1;
+static void printHelp() {
+    printf(
+        "Usage: dxgiScreenShot.exe [OPTIONS]\n"
+        "Takes a screen shot using DXGI Desktop Duplication and D3D11 APIs. Saves the file in Users Pictures directory.\n "
+        "/fileName [Filename]: Can specify the name of the screenshot\n "
+        "/configFile [dxgiScreenShot.ini]: Can specify the name including path (working directory if not specified) of the .ini configuration file\n "
+        "/drawCursor: Boolean flag. If provided it will draw the cursor. If not provided the cursor will not be drawn.\n "
+        "/showImage: Boolean flag. If provided it will open the image once it is finished coping it to disk.\n "
+        "/debug: Boolean flag. If provied it will enable logging too std out. \n"
+    );
 }
 
 
-static void printOptions(Option fOptions[]) {
-    for(int index = 0; fOptions[index].type != OPTION_TYPE_NONE; ++index) {
-            if (fOptions[index].type == OPTION_TYPE_INT) {
-                printf("Name: %s\nDescription: %s\nType: %d\nValue: %d\n", fOptions[index].name, fOptions[index].description, fOptions[index].type, fOptions[index].value);
-            } else if (fOptions[index].type == OPTION_TYPE_STRING) {
-                printf("Name: %s\nDescription: %s\nType: %d\nValue: %s\n", fOptions[index].name, fOptions[index].description, fOptions[index].type, fOptions[index].value);
-            } else if (fOptions[index].type == OPTION_TYPE_BOOL) {
-                printf("Name: %s\nDescription: %s\nType: %d\nValue: %d\n", fOptions[index].name, fOptions[index].description, fOptions[index].type, fOptions[index].value);
-            } else if (fOptions[index].type == OPTION_TYPE_FLOAT) {
-                printf("Name: %s\nDescription: %s\nType: %d\nValue: %f\n", fOptions[index].name, fOptions[index].description, fOptions[index].type, fOptions[index].value);
-            }
-    }
+static int StringEndsWith(const char *str, const char *suffix) {
+    if (!str || !suffix)
+        return 0;
+    size_t lenstr = strlen(str);
+    size_t lensuffix = strlen(suffix);
+    if (lensuffix >  lenstr)
+        return 0;
+    return strncmp(str + lenstr - lensuffix, suffix, lensuffix) == 0;
 }
 
 
 int main(int argc, char *argv[]){
 
+    // Automatically hide popup console.
     ShowWindow(GetConsoleWindow(), SW_HIDE);
     
-    HRESULT hr;
-    int errorNum = 0;
-    int8_t cursor_flag = 0;
-    int8_t DEBUG_ENABLED = 0;
-    CHAR fileName[_MAX_FNAME];
-    CHAR * fileName_p = fileName;
-    strcpy(fileName, "\\");
+    // List of variables
+    HRESULT hr; // The Windows API result code. This will be used to record errors.
+    int errorNum = 0; //Used to log the exit code.
 
-    for (int argNum = 0; argNum < argc; ++argNum) {
-        if (strcmp(argv[argNum], "/fileName") == 0) {
-            strcpy(fileName_p+1, argv[++argNum]);
-        } else if (strcmp(argv[argNum], "/drawCursor") == 0) {
-            cursor_flag = 1;
-        } else if (strcmp(argv[argNum], "/help") == 0) {
-            printHelp();
-            return errorNum;
-        } else if  (strcmp(argv[argNum], "/debug") == 0) {
-            DEBUG_ENABLED = 1;
+    //Flags this is pulled from the Options struct and is either the default value, a value from an ini config file, arguments too the script.
+    int8_t CURSOR_FLAG = 0;
+    int8_t DEBUG_ENABLED = 0;
+    int8_t SHOW_IMAGE_FLAG = 0;
+    CHAR CONFIGFILE[_MAX_FNAME] = "dxgiScreenShot.ini";
+    CHAR tmpfileName[_MAX_FNAME];
+    CHAR fileName[_MAX_FNAME];
+    CHAR fileName_date[_MAX_FNAME];
+    CHAR * fileName_p = fileName;
+    strcpy(fileName, "\\"); //Start fileName with a \
+    
+    SYSTEMTIME t; // Windows API time struct
+    GetLocalTime(&t); // Get current time
+    snprintf(fileName_date, _MAX_FNAME-3, "_%d-%d-%d_%d%d%d%d", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond, t.wMilliseconds);
+
+    // Three variables used for the looping through arguments and options.
+    int8_t argNum = 0;
+    Option * pOption = NULL;
+    CHAR optionName[_MAX_FNAME];
+
+    if (argc > 254) {
+        LOG("Too many arguments... cannot process exiting");
+        return -__LINE__;
+    }
+
+    //First loop through to find if a config file has been specified.
+    for (argNum = 0; argNum < argc; ++argNum) {
+        if (strcmp(argv[argNum], "/configFile") == 0) {
+            strcpy_s(CONFIGFILE, _MAX_FNAME, argv[++argNum]);
+            break;
         }
     }
 
+    /* 
+    * The default config file is located in the working directory of the exe and is named dxgiScreenShot.ini that will be used but it could be 
+    * overridden by passing a blank. This checks for that then attempts to load the config file if it has one.
+    */
+    if (strlen(CONFIGFILE) > 4) {
+        if (ini_parse(CONFIGFILE, handler, options) < 0) {
+            LOG("Could not load ini configuration file.");
+        }
+    }
+
+    print_options(options);
+
+    for (argNum = 0; argNum < argc; ++argNum) {
+        if (strcmp(argv[argNum], "/help") == 0) {
+            printHelp();
+            return errorNum;
+        } else if (strcmp(argv[argNum], "/fileName") == 0) {
+            strcpy_s(optionName, _MAX_FNAME, "fileName");
+            pOption = find_option(optionName, options);
+            pOption->value.x_string = argv[++argNum];
+        } else if (strcmp(argv[argNum], "/drawCursor") == 0) {
+            strcpy_s(optionName, _MAX_FNAME, "drawCursor");
+            pOption = find_option(optionName, options);
+            pOption->value.x_bool = true;
+        } else if (strcmp(argv[argNum], "/debug") == 0) {
+            strcpy_s(optionName, _MAX_FNAME, "debug");
+            pOption = find_option(optionName, options);
+            pOption->value.x_bool = true;
+        } else if (strcmp(argv[argNum], "/showImage") == 0) {
+            strcpy_s(optionName, _MAX_FNAME, "showImage");
+            pOption = find_option(optionName, options);
+            pOption->value.x_bool = true;
+        }
+        pOption = NULL;
+    }
+
+    for(argNum = 0; options[argNum].type != OPTION_TYPE_NONE; ++argNum) {
+        if (strcmp(options[argNum].name, "fileName") == 0) {
+            strcpy(fileName_p+1,options[argNum].value.x_string);
+        } else if (strcmp(options[argNum].name, "drawCursor") == 0) {
+            CURSOR_FLAG = options[argNum].value.x_bool;
+        } else if  (strcmp(options[argNum].name, "debug") == 0) {
+            DEBUG_ENABLED = options[argNum].value.x_bool;
+        } else if  (strcmp(options[argNum].name, "showImage") == 0) {
+            SHOW_IMAGE_FLAG = options[argNum].value.x_bool;
+        }
+    }
+
+    printf("SHOW_IMAGE_FLAG = %d", SHOW_IMAGE_FLAG);
+
     if (strlen(fileName) == 1) {
-        strcpy(fileName_p+1, "ScreenShot.bmp");
+        snprintf(tmpfileName, _MAX_FNAME, "ScreenShot%s.bmp", fileName_date);
+        strcpy(fileName_p+1, tmpfileName);
+    } else {
+        if (StringEndsWith(fileName, ".bmp") == 1) {
+            CHAR * end = strrchr(fileName, '.');
+            *end = '\0';
+        }
+        snprintf(tmpfileName, _MAX_FNAME, "%s%s.bmp", fileName, fileName_date);
+        strcpy(fileName_p+1, tmpfileName);
     }
 
     /* DXGI setup vars */
@@ -253,7 +307,7 @@ int main(int argc, char *argv[]){
     D3D11_TEXTURE2D_DESC desc;
 
     //Create GUI drawing texture
-    if (cursor_flag == 1) {
+    if (CURSOR_FLAG == 1) {
         desc.Width = OutputDuplDesc.ModeDesc.Width;
         desc.Height = OutputDuplDesc.ModeDesc.Height;
         desc.Format = OutputDuplDesc.ModeDesc.Format;
@@ -321,7 +375,7 @@ int main(int argc, char *argv[]){
     returnIfFailure(hr, errorNum - __LINE__, "Failed to QI for ID3D11Texture2D");
 
     // Draw Curser if flag set
-    if (cursor_flag == 1) {
+    if (CURSOR_FLAG == 1) {
         ID3D11DeviceContext_CopyResource(this->deviceContext, (ID3D11Resource *)this->GDIImage, (ID3D11Resource *)this->AcquiredDesktopImage);
 
         hr = ID3D11Texture2D_QueryInterface(this->GDIImage, &IID_IDXGISurface1, (void **)&this->DXGISurface);
@@ -427,7 +481,10 @@ int main(int argc, char *argv[]){
 
         fclose(f);
 
-        ShellExecute(0, 0, FilePath, 0, 0, SW_SHOW);
+        if (SHOW_IMAGE_FLAG == 1) {
+            ShellExecute(0, 0, FilePath, 0, 0, SW_SHOW);
+        }
+        
     } else {
         free(texData);
         returnIfFailure(hr, errorNum - __LINE__, "Failed to open file");
@@ -435,6 +492,11 @@ int main(int argc, char *argv[]){
 
     free(this);
     free(texData);
-    
+
+    if (DEBUG_ENABLED == 1){
+        printf("\nPress Enter too continue... \n");
+        fgets(tmpfileName, _MAX_FNAME, stdin);
+    }
+
     return 0;
 }

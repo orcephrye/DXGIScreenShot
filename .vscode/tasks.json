@@ -8,6 +8,8 @@
 			"args": [
 				"-fdiagnostics-color=always",
 				"-g",
+				"${fileDirname}\\inih\\ini.c",
+				"${fileDirname}\\options.c",
 				"${file}",
 				"-o",
 				"${fileDirname}\\${fileBasenameNoExtension}.exe",
@@ -32,6 +34,8 @@
 				"-fdiagnostics-color=always",
 				"-g",
 				"-O3",
+				"${fileDirname}\\inih\\ini.c",
+				"${fileDirname}\\options.c",
 				"${file}",
 				"-o",
 				"${fileDirname}\\${fileBasenameNoExtension}.exe",
